@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GitHub Raw → Download</title>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --panel: #151922;
+      --border: #252b38;
+      --text: #e8eaef;
+      --muted: #8b93a7;
+      --accent: #5b8def;
+      --accent-hover: #7aa3f5;
+      --ok: #3ecf8e;
+      --err: #f07178;
+      --warn: #e6c07b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 3rem;
+      line-height: 1.5;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.75rem;
+      text-align: center;
+      max-width: 420px;
+    }
+    .card {
+      width: 100%;
+      max-width: 520px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.35rem 1.4rem 1.5rem;
+    }
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.4rem;
+    }
+    input[type="url"],
+    input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus {
+      border-color: var(--accent);
+    }
+    .row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+    .field {
+      flex: 1;
+      min-width: 140px;
+    }
+    .ext-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .ext-wrap span {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .ext-wrap input {
+      width: 5.5rem;
+    }
+    button {
+      margin-top: 1.25rem;
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 1rem;
+      font-size: 0.88rem;
+      min-height: 1.3em;
+      color: var(--muted);
+    }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    .status.warn { color: var(--warn); }
+    .hint {
+      margin-top: 1.5rem;
+      max-width: 520px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .hint code {
+      background: var(--panel);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+    .hint a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .hint a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Raw Downloader</h1>
+  <p class="sub">Paste a raw.githubusercontent.com URL. File downloads as .txt or whatever extension you set.</p>
+
+  <div class="card">
+    <label for="url">Raw URL</label>
+    <input
+      type="url"
+      id="url"
+      placeholder="https://raw.githubusercontent.com/user/repo/branch/path/file.lua"
+      autocomplete="off"
+      spellcheck="false"
+    />
+
+    <div class="row">
+      <div class="field">
+        <label for="name">Filename (optional)</label>
+        <input type="text" id="name" placeholder="auto from URL" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="ext">Extension</label>
+        <div class="ext-wrap">
+          <span>.</span>
+          <input type="text" id="ext" value="txt" placeholder="txt" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+    </div>
+
+    <button id="go" type="button">Download</button>
+    <p class="status" id="status"></p>
+  </div>
+
+  <p class="hint">
+    Works with public <code>raw.githubusercontent.com</code> links (CORS allowed).
+    Blob page links (<code>github.com/.../blob/...</code>) will be auto-converted when possible.
+    Large files / private repos need a token or server proxy — this page is client-only.
+  </p>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const urlEl = $("url");
+    const nameEl = $("name");
+    const extEl = $("ext");
+    const goBtn = $("go");
+    const statusEl = $("status");
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || "";
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function toRawUrl(input) {
+      let u = (input || "").trim();
+      if (!u) return null;
+
+      // blob → raw
+      // https://github.com/owner/repo/blob/branch/path/to/file
+      const blob = u.match(
+        /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i
+      );
+      if (blob) {
+        return `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}/${blob[4]}`;
+      }
+
+      // already raw
+      if (/^https?:\/\/raw\.githubusercontent\.com\//i.test(u)) {
+        return u.split("?")[0]; // drop query
+      }
+
+      // gist raw-ish
+      const gist = u.match(
+        /^https?:\/\/gist\.githubusercontent\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/i
+      );
+      if (gist) return u.split("?")[0];
+
+      return u;
+    }
+
+    function basenameFromUrl(rawUrl) {
+      try {
+        const path = new URL(rawUrl).pathname;
+        const parts = path.split("/").filter(Boolean);
+        return parts[parts.length - 1] || "download";
+      } catch {
+        return "download";
+      }
+    }
+
+    function stripExt(name) {
+      const i = name.lastIndexOf(".");
+      if (i <= 0) return name;
+      return name.slice(0, i);
+    }
+
+    function sanitizeName(name) {
+      return (name || "download")
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+        .replace(/^\.+/, "")
+        .slice(0, 180) || "download";
+    }
+
+    async function download() {
+      const raw = toRawUrl(urlEl.value);
+      if (!raw || !/^https?:\/\//i.test(raw)) {
+        setStatus("Paste a valid URL first.", "err");
+        return;
+      }
+
+      let ext = (extEl.value || "txt").trim().replace(/^\./, "");
+      if (!ext) ext = "txt";
+      ext = ext.replace(/[^a-zA-Z0-9._+-]/g, "") || "txt";
+
+      let base = (nameEl.value || "").trim();
+      if (!base) {
+        base = stripExt(basenameFromUrl(raw));
+      } else {
+        base = stripExt(base);
+      }
+      base = sanitizeName(base);
+      const filename = `${base}.${ext}`;
+
+      goBtn.disabled = true;
+      setStatus("Fetching…", "warn");
+
+      try {
+        const res = await fetch(raw, {
+          method: "GET",
+          mode: "cors",
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        }
+
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 2500);
+
+        setStatus(`Saved as ${filename} (${(blob.size / 1024).toFixed(1)} KB)`, "ok");
+      } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        if (/Failed to fetch|NetworkError|CORS/i.test(msg)) {
+          setStatus(
+            "Fetch blocked (CORS / network). Use a public raw.githubusercontent.com URL, or open this page over http(s) not file://.",
+            "err"
+          );
+        } else {
+          setStatus("Error: " + msg, "err");
+        }
+      } finally {
+        goBtn.disabled = false;
+      }
+    }
+
+    goBtn.addEventListener("click", download);
+    urlEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") download();
+    });
+    nameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") download();
+    });
+  </script>
+</body>
+</html>
